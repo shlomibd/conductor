@@ -73,6 +73,7 @@ public class SubWorkflow extends WorkflowSystemTask {
 
         try {
             StartWorkflowInput startWorkflowInput = new StartWorkflowInput();
+            startWorkflowInput.setPriority(workflow.getPriority());
             startWorkflowInput.setWorkflowDefinition(workflowDefinition);
             startWorkflowInput.setName(name);
             startWorkflowInput.setVersion(version);

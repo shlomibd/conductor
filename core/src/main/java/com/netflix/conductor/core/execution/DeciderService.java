@@ -629,6 +629,11 @@ public class DeciderService {
         rescheduled.setStartTime(0);
         rescheduled.setEndTime(0);
         rescheduled.setWorkerId(null);
+        rescheduled.setWorkflowPriority(task.getWorkflowPriority() + 1);
+        LOGGER.debug(
+                "retry task -- increase priority from {} to {}",
+                task.getWorkflowPriority(),
+                rescheduled.getWorkflowPriority());
 
         if (StringUtils.isNotBlank(task.getExternalInputPayloadStoragePath())) {
             rescheduled.setExternalInputPayloadStoragePath(
