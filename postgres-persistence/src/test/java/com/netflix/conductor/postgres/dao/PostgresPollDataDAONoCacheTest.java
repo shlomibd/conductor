@@ -21,8 +21,10 @@ import javax.sql.DataSource;
 
 import org.flywaydb.core.Flyway;
 import org.junit.Before;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.junit.runners.MethodSorters;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
@@ -43,6 +45,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.junit.Assert.*;
 
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @ContextConfiguration(
         classes = {
             TestObjectMapperConfiguration.class,
@@ -76,8 +79,17 @@ public class PostgresPollDataDAONoCacheTest {
     @Before
     public void before() {
         try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(true);
-            conn.prepareStatement("truncate table poll_data").executeUpdate();
+            // Explicitly disable autoCommit to match HikariCP pool configuration
+            // and ensure we can control transaction boundaries
+            conn.setAutoCommit(false);
+
+            // Use RESTART IDENTITY to reset sequences and CASCADE for foreign keys
+            conn.prepareStatement("truncate table poll_data restart identity cascade")
+                    .executeUpdate();
+
+            // Explicitly commit the truncation in a separate transaction
+            // This ensures the truncation is visible to all subsequent connections
+            conn.commit();
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException(e);

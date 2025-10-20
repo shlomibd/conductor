@@ -450,10 +450,23 @@ public class PostgresQueueDAO extends PostgresBaseDAO implements QueueDAO {
         }
 
         String POP_QUERY =
-                "WITH _queue_ids AS (SELECT message_id FROM queue_message"
-                        + " WHERE queue_name=?  AND popped=false AND deliver_on <= (current_timestamp + (1000 ||' microseconds')::interval)"
-                        + " ORDER BY priority DESC, deliver_on, created_on LIMIT ? FOR UPDATE SKIP LOCKED) UPDATE queue_message SET popped = true WHERE message_id = ANY(SELECT message_id FROM _queue_ids LIMIT ?)"
-                        + " RETURNING message_id, priority, payload";
+                "WITH cte AS ("
+                        + "    SELECT queue_name, message_id "
+                        + "    FROM queue_message "
+                        + "    WHERE queue_name = ? "
+                        + "      AND popped = false "
+                        + "      AND deliver_on <= (current_timestamp + (1000 || ' microseconds')::interval) "
+                        + "    ORDER BY deliver_on, priority DESC, created_on "
+                        + "    LIMIT ? "
+                        + "    FOR UPDATE SKIP LOCKED "
+                        + ") "
+                        + "UPDATE queue_message "
+                        + "   SET popped = true "
+                        + "   FROM cte "
+                        + "   WHERE queue_message.queue_name = cte.queue_name "
+                        + "     AND queue_message.message_id = cte.message_id "
+                        + "     AND queue_message.popped = false "
+                        + "   RETURNING queue_message.message_id, queue_message.priority, queue_message.payload";
 
         List<Message> result =
                 query(
