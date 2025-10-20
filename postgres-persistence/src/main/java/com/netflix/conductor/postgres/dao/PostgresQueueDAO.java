@@ -468,24 +468,39 @@ public class PostgresQueueDAO extends PostgresBaseDAO implements QueueDAO {
                         + "     AND queue_message.popped = false "
                         + "   RETURNING queue_message.message_id, queue_message.priority, queue_message.payload";
 
-        return query(
-                connection,
-                POP_QUERY,
-                p ->
-                        p.addParameter(queueName)
-                                .addParameter(count)
-                                .executeAndFetch(
-                                        rs -> {
-                                            List<Message> results = new ArrayList<>();
-                                            while (rs.next()) {
-                                                Message m = new Message();
-                                                m.setId(rs.getString("message_id"));
-                                                m.setPriority(rs.getInt("priority"));
-                                                m.setPayload(rs.getString("payload"));
-                                                results.add(m);
-                                            }
-                                            return results;
-                                        }));
+        List<Message> result =
+                query(
+                        connection,
+                        POP_QUERY,
+                        p ->
+                                p.addParameter(queueName)
+                                        .addParameter(count)
+                                        .addParameter(count)
+                                        .executeAndFetch(
+                                                rs -> {
+                                                    List<Message> results = new ArrayList<>();
+                                                    while (rs.next()) {
+                                                        Message m = new Message();
+                                                        m.setId(rs.getString("message_id"));
+                                                        m.setPriority(rs.getInt("priority"));
+                                                        m.setPayload(rs.getString("payload"));
+                                                        results.add(m);
+                                                    }
+                                                    return results;
+                                                }));
+        if (result != null && result.size() > count) {
+            logger.error(
+                    "popMessages from Queue {}: result.size() > count --- size is {} count is {}",
+                    queueName,
+                    result.size(),
+                    count);
+            throw new IllegalStateException(
+                    "popMessages: result.size() > count --- size is "
+                            + result.size()
+                            + " count is "
+                            + count);
+        }
+        return result;
     }
 
     @Override

@@ -67,5 +67,7 @@ ext {
     revNats = '2.16.14'
     revStan = '2.2.3'
     revFlyway = '10.15.2'
+    revElasticSearch8 = '8.19.5'
+
     revConductorClient = '4.0.10'
 }
