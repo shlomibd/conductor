@@ -464,7 +464,7 @@ public class PostgresQueueDAO extends PostgresBaseDAO implements QueueDAO {
                         + "   SET popped = true "
                         + "   FROM cte "
                         + "   WHERE queue_message.queue_name = cte.queue_name "
-                        + "     AND queue_message.message_id = cte.message_id "
+                        + "     AND queue_message.message_id = ANY(SELECT message_id FROM cte LIMIT ?)"
                         + "     AND queue_message.popped = false "
                         + "   RETURNING queue_message.message_id, queue_message.priority, queue_message.payload";
 
