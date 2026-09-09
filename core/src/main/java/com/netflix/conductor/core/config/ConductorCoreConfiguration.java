@@ -21,9 +21,12 @@ import java.util.concurrent.ThreadFactory;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
+import org.conductoross.conductor.core.listener.MetadataChangeListener;
+import org.conductoross.conductor.core.listener.MetadataChangeListenerStub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -42,6 +45,7 @@ import com.netflix.conductor.core.listener.WorkflowStatusListenerStub;
 import com.netflix.conductor.core.storage.DummyPayloadStorage;
 import com.netflix.conductor.core.sync.Lock;
 import com.netflix.conductor.core.sync.noop.NoopLock;
+import com.netflix.conductor.core.utils.IDGenerator;
 
 import static com.netflix.conductor.core.events.EventQueues.EVENT_QUEUE_PROVIDERS_QUALIFIER;
 import static com.netflix.conductor.core.execution.tasks.SystemTaskRegistry.ASYNC_SYSTEM_TASKS_QUALIFIER;
@@ -91,6 +95,15 @@ public class ConductorCoreConfiguration {
         return new TaskStatusListenerStub();
     }
 
+    @ConditionalOnProperty(
+            name = "conductor.metadata-change-listener.type",
+            havingValue = "stub",
+            matchIfMissing = true)
+    @Bean
+    public MetadataChangeListener metadataChangeListener() {
+        return new MetadataChangeListenerStub();
+    }
+
     @Bean
     public ExecutorService executorService(ConductorProperties conductorProperties) {
         ThreadFactory threadFactory =
@@ -105,15 +118,23 @@ public class ConductorCoreConfiguration {
     @Bean
     @Qualifier("taskMappersByTaskType")
     public Map<String, TaskMapper> getTaskMappers(List<TaskMapper> taskMappers) {
-        return taskMappers.stream().collect(Collectors.toMap(TaskMapper::getTaskType, identity()));
+        // Return mutable map so annotated task mappers can be added
+        return taskMappers.stream()
+                .collect(
+                        Collectors.toMap(
+                                TaskMapper::getTaskType,
+                                identity(),
+                                (a, b) -> a,
+                                java.util.HashMap::new));
     }
 
     @Bean
     @Qualifier(ASYNC_SYSTEM_TASKS_QUALIFIER)
     public Set<WorkflowSystemTask> asyncSystemTasks(Set<WorkflowSystemTask> allSystemTasks) {
+        // Return mutable set so annotated tasks can be added
         return allSystemTasks.stream()
                 .filter(WorkflowSystemTask::isAsync)
-                .collect(Collectors.toUnmodifiableSet());
+                .collect(Collectors.toCollection(java.util.HashSet::new));
     }
 
     @Bean
@@ -122,6 +143,12 @@ public class ConductorCoreConfiguration {
             List<EventQueueProvider> eventQueueProviders) {
         return eventQueueProviders.stream()
                 .collect(Collectors.toMap(EventQueueProvider::getQueueType, identity()));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(IDGenerator.class)
+    public IDGenerator idGenerator() {
+        return new IDGenerator();
     }
 
     @Bean

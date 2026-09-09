@@ -48,10 +48,13 @@ import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.FieldSortBuilder;
+import org.elasticsearch.search.sort.ScriptSortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.elasticsearch.xcontent.XContentType;
 import org.joda.time.DateTime;
@@ -498,8 +501,10 @@ public class ElasticSearchRestDAOV7 extends ElasticSearchBaseDAO implements Inde
             IndexRequest request =
                     new IndexRequest(workflowIndexName)
                             .id(workflowId)
-                            .source(docBytes, XContentType.JSON)
-                            .setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
+                            .source(docBytes, XContentType.JSON);
+            if (properties.isWaitForIndexRefresh()) {
+                request.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
+            }
             elasticSearchClient.index(request, RequestOptions.DEFAULT);
             long endTime = Instant.now().toEpochMilli();
             logger.debug(
@@ -524,12 +529,11 @@ public class ElasticSearchRestDAOV7 extends ElasticSearchBaseDAO implements Inde
             long startTime = Instant.now().toEpochMilli();
             String taskId = task.getTaskId();
 
-            indexObject(
-                    taskIndexName,
-                    TASK_DOC_TYPE,
-                    taskId,
-                    task,
-                    WriteRequest.RefreshPolicy.WAIT_UNTIL);
+            WriteRequest.RefreshPolicy refreshPolicy =
+                    properties.isWaitForIndexRefresh()
+                            ? WriteRequest.RefreshPolicy.WAIT_UNTIL
+                            : null;
+            indexObject(taskIndexName, TASK_DOC_TYPE, taskId, task, refreshPolicy);
             long endTime = Instant.now().toEpochMilli();
             logger.debug(
                     "Time taken {} for  indexing task:{} in workflow: {}",
@@ -1064,19 +1068,7 @@ public class ElasticSearchRestDAOV7 extends ElasticSearchBaseDAO implements Inde
         searchSourceBuilder.from(start);
         searchSourceBuilder.size(size);
 
-        if (sortOptions != null && !sortOptions.isEmpty()) {
-
-            for (String sortOption : sortOptions) {
-                SortOrder order = SortOrder.ASC;
-                String field = sortOption;
-                int index = sortOption.indexOf(":");
-                if (index > 0) {
-                    field = sortOption.substring(0, index);
-                    order = SortOrder.valueOf(sortOption.substring(index + 1));
-                }
-                searchSourceBuilder.sort(new FieldSortBuilder(field).order(order));
-            }
-        }
+        addSortOptions(searchSourceBuilder, sortOptions);
 
         // Generate the actual request to send to ES.
         SearchRequest searchRequest = new SearchRequest(indexName);
@@ -1107,19 +1099,7 @@ public class ElasticSearchRestDAOV7 extends ElasticSearchBaseDAO implements Inde
             searchSourceBuilder.fetchSource(false);
         }
 
-        if (sortOptions != null && !sortOptions.isEmpty()) {
-
-            for (String sortOption : sortOptions) {
-                SortOrder order = SortOrder.ASC;
-                String field = sortOption;
-                int index = sortOption.indexOf(":");
-                if (index > 0) {
-                    field = sortOption.substring(0, index);
-                    order = SortOrder.valueOf(sortOption.substring(index + 1));
-                }
-                searchSourceBuilder.sort(new FieldSortBuilder(field).order(order));
-            }
-        }
+        addSortOptions(searchSourceBuilder, sortOptions);
 
         // Generate the actual request to send to ES.
         SearchRequest searchRequest = new SearchRequest(indexName);
@@ -1127,6 +1107,56 @@ public class ElasticSearchRestDAOV7 extends ElasticSearchBaseDAO implements Inde
 
         SearchResponse response = elasticSearchClient.search(searchRequest, RequestOptions.DEFAULT);
         return mapSearchResult(response, idOnly, clazz);
+    }
+
+    /**
+     * Adds search ordering, including the internal agent hierarchy marker emitted by the workflow
+     * search resource. The script sorts a parent and its direct children on the same workflow-id
+     * key, then ranks the parent before children. It avoids an invalid field sort for the marker on
+     * Elasticsearch-backed deployments.
+     */
+    private static void addSortOptions(
+            SearchSourceBuilder searchSourceBuilder, List<String> sortOptions) {
+        if (sortOptions == null || sortOptions.isEmpty()) {
+            return;
+        }
+
+        for (String sortOption : sortOptions) {
+            SortOrder order = SortOrder.ASC;
+            String field = sortOption;
+            int index = sortOption.indexOf(":");
+            if (index > 0) {
+                field = sortOption.substring(0, index);
+                order = SortOrder.valueOf(sortOption.substring(index + 1));
+            }
+
+            if ("agentHierarchy".equals(field)) {
+                searchSourceBuilder.sort(
+                        new ScriptSortBuilder(
+                                        new Script(
+                                                ScriptType.INLINE,
+                                                "painless",
+                                                "doc['parentWorkflowId'].size() != 0 && "
+                                                        + "doc['parentWorkflowId'].value != '' ? "
+                                                        + "doc['parentWorkflowId'].value : "
+                                                        + "doc['workflowId'].value",
+                                                Collections.emptyMap()),
+                                        ScriptSortBuilder.ScriptSortType.STRING)
+                                .order(SortOrder.ASC));
+                searchSourceBuilder.sort(
+                        new ScriptSortBuilder(
+                                        new Script(
+                                                ScriptType.INLINE,
+                                                "painless",
+                                                "doc['parentWorkflowId'].size() != 0 && "
+                                                        + "doc['parentWorkflowId'].value != '' ? 1 : 0",
+                                                Collections.emptyMap()),
+                                        ScriptSortBuilder.ScriptSortType.NUMBER)
+                                .order(SortOrder.ASC));
+            } else {
+                searchSourceBuilder.sort(new FieldSortBuilder(field).order(order));
+            }
+        }
     }
 
     private <T> SearchResult<T> mapSearchResult(

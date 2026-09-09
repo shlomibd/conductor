@@ -12,9 +12,19 @@
  */
 package com.netflix.conductor.rest.controllers;
 
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
+import org.conductoross.conductor.model.SignalResponse;
+import org.conductoross.conductor.model.WorkflowSignalReturnStrategy;
+import org.conductoross.conductor.model.WorkflowStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.netflix.conductor.common.metadata.tasks.Task;
 import com.netflix.conductor.common.metadata.workflow.RerunWorkflowRequest;
 import com.netflix.conductor.common.metadata.workflow.SkipTaskRequest;
 import com.netflix.conductor.common.metadata.workflow.StartWorkflowRequest;
@@ -35,6 +46,9 @@ import com.netflix.conductor.service.WorkflowService;
 import com.netflix.conductor.service.WorkflowTestService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
 
 import static com.netflix.conductor.rest.config.RequestMappingConstants.WORKFLOW;
 
@@ -43,6 +57,7 @@ import static org.springframework.http.MediaType.TEXT_PLAIN_VALUE;
 
 @RestController
 @RequestMapping(WORKFLOW)
+@Slf4j
 public class WorkflowResource {
 
     private final WorkflowService workflowService;
@@ -76,6 +91,62 @@ public class WorkflowResource {
         return workflowService.startWorkflow(name, version, correlationId, priority, input);
     }
 
+    @SneakyThrows
+    @PostMapping(value = "execute/{name}/{version}", produces = APPLICATION_JSON_VALUE)
+    @Operation(summary = "Execute a workflow synchronously")
+    public Mono<SignalResponse> executeWorkflow(
+            @PathVariable("name") String name,
+            @PathVariable(value = "version", required = false) Integer version,
+            @RequestParam(value = "requestId", required = false) String requestId,
+            @RequestParam(value = "waitUntilTaskRef", required = false) String waitUntilTaskRef,
+            @RequestParam(value = "waitForSeconds", required = false, defaultValue = "10")
+                    Integer waitForSeconds,
+            @RequestParam(value = "consistency", required = false, defaultValue = "DURABLE")
+                    String workflowConsistency,
+            @RequestParam(
+                            value = "returnStrategy",
+                            required = false,
+                            defaultValue = "TARGET_WORKFLOW")
+                    WorkflowSignalReturnStrategy returnStrategy,
+            @RequestBody StartWorkflowRequest request) {
+
+        if (version == 0) {
+            version = null;
+        }
+
+        waitForSeconds = Optional.ofNullable(waitForSeconds).filter(w -> w != 0).orElse(10);
+
+        if (StringUtils.isBlank(requestId)) {
+            requestId = UUID.randomUUID().toString();
+        }
+
+        if (request.getWorkflowDef() != null
+                && request.getWorkflowDef().getTasks() != null
+                && !request.getWorkflowDef().getTasks().isEmpty()) {
+            markAsDynamicWorkflow(request.getInput());
+        }
+
+        request.setName(name);
+        request.setVersion(version);
+
+        String workflowId = workflowService.startWorkflow(request);
+        String workflowRequestId = requestId;
+
+        // Parse comma-separated task refs
+        String[] taskRefs =
+                StringUtils.isNotBlank(waitUntilTaskRef)
+                        ? waitUntilTaskRef.split(",")
+                        : new String[0];
+
+        return WorkflowSignalResponder.awaitSignalResponse(
+                workflowService,
+                workflowId,
+                taskRefs,
+                returnStrategy,
+                workflowRequestId,
+                Duration.ofSeconds(waitForSeconds));
+    }
+
     @GetMapping("/{name}/correlated/{correlationId}")
     @Operation(summary = "Lists workflows for the given correlation id")
     public List<Workflow> getWorkflows(
@@ -86,6 +157,36 @@ public class WorkflowResource {
             @RequestParam(value = "includeTasks", defaultValue = "false", required = false)
                     boolean includeTasks) {
         return workflowService.getWorkflows(name, correlationId, includeClosed, includeTasks);
+    }
+
+    @GetMapping("/{workflowId}/tasks")
+    @Operation(summary = "Gets the workflow tasks by workflow (execution) id")
+    public SearchResult<Task> getExecutionStatusTaskList(
+            @PathVariable("workflowId") String workflowId,
+            final @RequestParam(value = "start", defaultValue = "0", required = false) Integer
+                            start,
+            final @RequestParam(value = "count", defaultValue = "15", required = false) Integer
+                            count,
+            final @RequestParam(value = "status", required = false) List<String> status) {
+        Workflow workflow = workflowService.getExecutionStatus(workflowId, true);
+
+        List<Task> workflowFilteredTasks = workflow.getTasks();
+        if (status != null && !status.isEmpty()) {
+            workflowFilteredTasks =
+                    workflow.getTasks().stream()
+                            .filter(
+                                    t ->
+                                            status.stream()
+                                                    .map(String::toUpperCase)
+                                                    .anyMatch(s -> t.getStatus().name().equals(s)))
+                            .collect(Collectors.toList());
+        }
+
+        int totalHits = workflowFilteredTasks.size();
+        int fromIndex = Math.min(start, totalHits);
+        int toIndex = Math.min(start + count, totalHits);
+        List<Task> requestedSubList = workflowFilteredTasks.subList(fromIndex, toIndex);
+        return new SearchResult<>(totalHits, requestedSubList);
     }
 
     @PostMapping(value = "/{name}/correlated")
@@ -107,6 +208,18 @@ public class WorkflowResource {
             @RequestParam(value = "includeTasks", defaultValue = "true", required = false)
                     boolean includeTasks) {
         return workflowService.getExecutionStatus(workflowId, includeTasks);
+    }
+
+    @GetMapping("/{workflowId}/status")
+    @Operation(summary = "Gets the workflow status summary by workflow (execution) id")
+    public WorkflowStatus getWorkflowStatusSummary(
+            @PathVariable("workflowId") String workflowId,
+            @RequestParam(value = "includeOutput", defaultValue = "false", required = false)
+                    boolean includeOutput,
+            @RequestParam(value = "includeVariables", defaultValue = "false", required = false)
+                    boolean includeVariables) {
+        Workflow workflow = workflowService.getExecutionStatus(workflowId, false);
+        return new WorkflowStatus(workflow, includeOutput, includeVariables);
     }
 
     @DeleteMapping("/{workflowId}/remove")
@@ -228,8 +341,16 @@ public class WorkflowResource {
             @RequestParam(value = "size", defaultValue = "100", required = false) int size,
             @RequestParam(value = "sort", required = false) String sort,
             @RequestParam(value = "freeText", defaultValue = "*", required = false) String freeText,
-            @RequestParam(value = "query", required = false) String query) {
-        return workflowService.searchWorkflows(start, size, sort, freeText, query);
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "classifier", required = false) String classifier,
+            @RequestParam(value = "topLevelOnly", defaultValue = "false", required = false)
+                    boolean topLevelOnly) {
+        return workflowService.searchWorkflows(
+                start,
+                size,
+                withAgentHierarchySort(sort, classifier, topLevelOnly),
+                freeText,
+                withTopLevelFilter(withClassifierFilter(query, classifier), topLevelOnly));
     }
 
     @Operation(
@@ -243,8 +364,68 @@ public class WorkflowResource {
             @RequestParam(value = "size", defaultValue = "100", required = false) int size,
             @RequestParam(value = "sort", required = false) String sort,
             @RequestParam(value = "freeText", defaultValue = "*", required = false) String freeText,
-            @RequestParam(value = "query", required = false) String query) {
-        return workflowService.searchWorkflowsV2(start, size, sort, freeText, query);
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "classifier", required = false) String classifier,
+            @RequestParam(value = "topLevelOnly", defaultValue = "false", required = false)
+                    boolean topLevelOnly) {
+        return workflowService.searchWorkflowsV2(
+                start,
+                size,
+                withAgentHierarchySort(sort, classifier, topLevelOnly),
+                freeText,
+                withTopLevelFilter(withClassifierFilter(query, classifier), topLevelOnly));
+    }
+
+    /**
+     * Folds an optional classifier filter (comma-separated values, e.g. {@code agent} or {@code
+     * agent,workflow}) into the structured search query as a {@code classifier IN (...)} clause.
+     * This keeps the IndexDAO contract unchanged: every index backend that understands the {@code
+     * classifier} field in a query string automatically supports the request parameter.
+     */
+    private static String withClassifierFilter(String query, String classifier) {
+        if (classifier == null || classifier.isBlank()) {
+            return query;
+        }
+        String values =
+                Arrays.stream(classifier.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.joining(","));
+        if (values.isEmpty()) {
+            return query;
+        }
+        String clause = "classifier IN (" + values + ")";
+        return (query == null || query.isBlank()) ? clause : query + " AND " + clause;
+    }
+
+    /**
+     * Folds the {@code topLevelOnly} request parameter into the structured search query as a {@code
+     * parentWorkflowId = ""} clause, restricting results to executions that were not spawned by
+     * another workflow (sub-workflows and sub-agents index their parent's id). Like the classifier
+     * filter, this keeps the IndexDAO contract unchanged.
+     */
+    private static String withTopLevelFilter(String query, boolean topLevelOnly) {
+        if (!topLevelOnly) {
+            return query;
+        }
+        String clause = "parentWorkflowId=\"\"";
+        return (query == null || query.isBlank()) ? clause : query + " AND " + clause;
+    }
+
+    /**
+     * Keeps agent executions grouped with their direct sub-agent executions. The index DAOs
+     * understand the internal {@code agentHierarchy} sort key and order each parent before its
+     * children, while retaining the caller's requested sort within a group. Top-level-only searches
+     * do not need this ordering because they exclude sub-agents altogether.
+     */
+    private static String withAgentHierarchySort(
+            String sort, String classifier, boolean topLevelOnly) {
+        if (topLevelOnly || classifier == null || !"agent".equalsIgnoreCase(classifier.trim())) {
+            return sort;
+        }
+        return (sort == null || sort.isBlank())
+                ? "agentHierarchy:DESC"
+                : "agentHierarchy:DESC|" + sort;
     }
 
     @Operation(
@@ -292,5 +473,19 @@ public class WorkflowResource {
     @Operation(summary = "Test workflow execution using mock data")
     public Workflow testWorkflow(@RequestBody WorkflowTestRequest request) {
         return workflowTestService.testWorkflow(request);
+    }
+
+    private static void markAsDynamicWorkflow(Map<String, Object> workflowInput) {
+        String systemMetadataKey = "_systemMetadata";
+        Map<String, Object> systemMetadata;
+
+        if (workflowInput.containsKey(systemMetadataKey)) {
+            systemMetadata = (Map<String, Object>) workflowInput.get(systemMetadataKey);
+        } else {
+            systemMetadata = new HashMap<>();
+        }
+
+        systemMetadata.put("dynamic", true);
+        workflowInput.put(systemMetadataKey, systemMetadata);
     }
 }

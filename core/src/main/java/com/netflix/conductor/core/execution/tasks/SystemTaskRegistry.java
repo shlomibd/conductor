@@ -18,6 +18,9 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,11 +28,20 @@ import org.springframework.stereotype.Component;
  * com.netflix.conductor.common.metadata.tasks.TaskType} to {@link WorkflowSystemTask} instances.
  */
 @Component
+@DependsOn("workerTaskAnnotationScanner")
 public class SystemTaskRegistry {
 
     public static final String ASYNC_SYSTEM_TASKS_QUALIFIER = "asyncSystemTasks";
 
     private final Map<String, WorkflowSystemTask> registry;
+
+    @Autowired
+    public SystemTaskRegistry(
+            Set<WorkflowSystemTask> tasks,
+            @Qualifier(ASYNC_SYSTEM_TASKS_QUALIFIER) Set<WorkflowSystemTask> asyncSystemTasks) {
+        this(tasks);
+        asyncSystemTasks.forEach(task -> registry.putIfAbsent(task.getTaskType(), task));
+    }
 
     public SystemTaskRegistry(Set<WorkflowSystemTask> tasks) {
         this.registry =

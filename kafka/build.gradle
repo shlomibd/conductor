@@ -17,15 +17,13 @@ dependencies {
     implementation "org.apache.kafka:kafka-clients:${revKafka}"
 
     testImplementation 'org.springframework.boot:spring-boot-starter-web'
-    testImplementation "org.testcontainers:mockserver:${revTestContainer}"
-    testImplementation "org.mock-server:mockserver-client-java:${revMockServerClient}"
 
     testImplementation "org.apache.groovy:groovy-all:${revGroovy}"
     testImplementation "org.spockframework:spock-core:${revSpock}"
     testImplementation "org.spockframework:spock-spring:${revSpock}"
 
+    testImplementation project(':conductor-server')
     testImplementation project(':conductor-test-util')
     testImplementation project(':conductor-test-util').sourceSets.test.output
     testImplementation "redis.clients:jedis:${revJedis}"
-
 }

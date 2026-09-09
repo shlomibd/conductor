@@ -31,6 +31,9 @@ import com.netflix.conductor.service.MetadataService
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.annotation.PostConstruct
 
+import static java.util.concurrent.TimeUnit.SECONDS
+import static org.awaitility.Awaitility.await
+
 /**
  * This is a helper class used to initialize task definitions required by the tests when loaded up.
  * The task definitions that are loaded up in {@link WorkflowTestUtil#taskDefinitions()} method as part of the post construct of the bean.
@@ -182,9 +185,14 @@ class WorkflowTestUtil {
             int version = Integer.parseInt(StringUtils.substringAfter(workflowWithVersion, ":"))
             List<String> running = workflowExecutionService.getRunningWorkflows(workflowName, version)
             for (String workflowId : running) {
-                WorkflowModel workflow = workflowExecutor.getWorkflow(workflowId, false)
-                if (!workflow.getStatus().isTerminal()) {
-                    workflowExecutor.terminateWorkflow(workflowId, "cleanup")
+                try {
+                    WorkflowModel workflow = workflowExecutor.getWorkflow(workflowId, false)
+                    if (!workflow.getStatus().isTerminal()) {
+                        workflowExecutor.terminateWorkflow(workflowId, "cleanup")
+                    }
+                } catch (Exception e) {
+                    // payload may be missing from external storage; force-terminate to unblock cleanup
+                    try { workflowExecutor.terminateWorkflow(workflowId, "cleanup") } catch (Exception ignored) {}
                 }
             }
         }
@@ -234,7 +242,16 @@ class WorkflowTestUtil {
      * @return A Tuple of taskResult and acknowledgement of the poll
      */
     Tuple pollAndFailTask(String taskName, String workerId, String failureReason, Map<String, Object> outputParams = null, int waitAtEndSeconds = 0) {
-        def polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        Task polledIntegrationTask = null
+        for (int attempt = 0; attempt < 4 && polledIntegrationTask == null; attempt++) {
+            if (attempt > 0) {
+                Thread.sleep(200)
+            }
+            polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        }
+        if (polledIntegrationTask == null) {
+            return new Tuple(null, null)
+        }
         def taskResult = new TaskResult(polledIntegrationTask)
         taskResult.status = TaskResult.Status.FAILED
         taskResult.reasonForIncompletion = failureReason
@@ -272,7 +289,13 @@ class WorkflowTestUtil {
      * @return A Tuple of polledTask and acknowledgement of the poll
      */
     Tuple pollAndCompleteTask(String taskName, String workerId, Map<String, Object> outputParams = null, int waitAtEndSeconds = 0) {
-        def polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        Task polledIntegrationTask = null
+        for (int attempt = 0; attempt < 4 && polledIntegrationTask == null; attempt++) {
+            if (attempt > 0) {
+                Thread.sleep(200)
+            }
+            polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        }
         if (polledIntegrationTask == null) {
             return new Tuple(null, null)
         }
@@ -288,7 +311,16 @@ class WorkflowTestUtil {
     }
 
     Tuple pollAndCompleteLargePayloadTask(String taskName, String workerId, String outputPayloadPath) {
-        def polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        Task polledIntegrationTask = null
+        for (int attempt = 0; attempt < 4 && polledIntegrationTask == null; attempt++) {
+            if (attempt > 0) {
+                Thread.sleep(200)
+            }
+            polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        }
+        if (polledIntegrationTask == null) {
+            return new Tuple(null)
+        }
         def taskResult = new TaskResult(polledIntegrationTask)
         taskResult.status = TaskResult.Status.COMPLETED
         taskResult.outputData = null
@@ -298,7 +330,16 @@ class WorkflowTestUtil {
     }
 
     Tuple pollAndUpdateTask(String taskName, String workerId, String outputPayloadPath, Map<String, Object> outputParams = null, int waitAtEndSeconds = 0) {
-        def polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        Task polledIntegrationTask = null
+        for (int attempt = 0; attempt < 4 && polledIntegrationTask == null; attempt++) {
+            if (attempt > 0) {
+                Thread.sleep(200)
+            }
+            polledIntegrationTask = workflowExecutionService.poll(taskName, workerId)
+        }
+        if (polledIntegrationTask == null) {
+            return waitAtEndSecondsAndReturn(waitAtEndSeconds, null)
+        }
         def taskResult = new TaskResult(polledIntegrationTask)
         taskResult.status = TaskResult.Status.IN_PROGRESS
         taskResult.callbackAfterSeconds = 1
@@ -345,5 +386,37 @@ class WorkflowTestUtil {
                 assert payload.containsKey(k)
                 assert payload[k] == v
         }
+    }
+
+    static def awaitIgnoreUnfulfilled(Closure closure) {
+        try {
+            await().atMost(2, SECONDS).until(closure)
+        } catch (Exception ignored) {
+            System.out.println("Condition was not fulfilled within 2 seconds but continue execution")
+        }
+    }
+
+    Tuple completeTask(String taskId, String workerId, Map<String, Object> outputParams = null, int waitAtEndSeconds = 0) {
+        def polledIntegrationTask = workflowExecutionService.getTask(taskId)
+        if (polledIntegrationTask == null) {
+            return new Tuple(null, null)
+        }
+        def taskResult = new TaskResult(polledIntegrationTask)
+        taskResult.status = TaskResult.Status.COMPLETED
+        if (outputParams) {
+            outputParams.forEach { k, v ->
+                taskResult.outputData[k] = v
+            }
+        }
+
+        def wf0 = workflowExecutionService.getExecutionStatus(polledIntegrationTask.workflowInstanceId, true)
+        workflowExecutionService.updateTask(taskResult)
+
+        awaitIgnoreUnfulfilled {
+            def wf1 = workflowExecutionService.getExecutionStatus(polledIntegrationTask.workflowInstanceId, true)
+            workflowStatusHasChanged(wf0, wf1) || nextTaskHasBeenScheduled(wf1, polledIntegrationTask.taskId)
+        }
+
+        return waitAtEndSecondsAndReturn(waitAtEndSeconds, polledIntegrationTask)
     }
 }

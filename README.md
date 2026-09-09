@@ -8,149 +8,385 @@
 
 
 <h1 align="center" style="border-bottom: none">
-    Conductor - Scalable Workflow Orchestration
+    Conductor - Durable Execution for Workflows and Agents
 </h1>
 
 
 [![GitHub stars](https://img.shields.io/github/stars/conductor-oss/conductor?style=social)](https://github.com/conductor-oss/conductor/stargazers)
 [![Github release](https://img.shields.io/github/v/release/conductor-oss/conductor.svg)](https://github.com/conductor-oss/conductor/releases)
 [![License](https://img.shields.io/github/license/conductor-oss/conductor.svg)](http://www.apache.org/licenses/LICENSE-2.0)
-[![Conductor Slack](https://img.shields.io/badge/Slack-Join%20the%20Community-blueviolet?logo=slack)](https://join.slack.com/t/orkes-conductor/shared_invite/zt-2vdbx239s-Eacdyqya9giNLHfrCavfaA)
+[![Conductor Slack](https://img.shields.io/badge/Slack-Join%20the%20Community-blueviolet?logo=slack)](https://join.slack.com/t/orkes-conductor/shared_invite/zt-3dpcskdyd-W895bJDm8psAV7viYG3jFA)
 [![Conductor OSS](https://img.shields.io/badge/Conductor%20OSS-Visit%20Site-blue)](https://conductor-oss.org)
 
+#### Build agents that adapt. Run graphs that endure.
 
-
-
-Conductor is an open-source orchestration engine built at Netflix to help developers manage microservices and event-driven workflows. Today, it’s actively maintained by the team at [Orkes](https://orkes.io) and a growing [community of contributors](https://orkes-conductor.slack.com/join/shared_invite/zt-2vdbx239s-Eacdyqya9giNLHfrCavfaA#/shared-invite/email).
-
+Conductor is an open-source durable execution platform for microservices, AI agents, and adaptive workflow graphs. It turns runtime choices—loops, branching, fan-out, tool calls, approvals, retries, and cancellation—into durable, inspectable execution. It originated at [Netflix](https://netflixtechblog.com/netflix-conductor-a-microservices-orchestrator-2e8d4771bf40) and is actively maintained by [Orkes](https://orkes.io) and the [community](https://join.slack.com/t/orkes-conductor/shared_invite/zt-3dpcskdyd-W895bJDm8psAV7viYG3jFA).
 
 [![conductor_oss_getting_started](https://github.com/user-attachments/assets/6153aa58-8ad1-4ec5-93d1-38ba1b83e3f4)](https://youtu.be/4azDdDlx27M)
 
-- - - 
-# Table of Contents
-1. [What is Conductor?](#what-is-conductor)
-    * [Key benefits](#key-benefits)
-    * [Features](#features)
-2. [Getting Started with Conductor](#getting-started-with-conductor)
-    * [Requirements](#requirements)
-    * [Quick Start guide](#quick-start-guide)
-    * [Create your first workflow](#create-your-first-workflow)
-3. [Documentation](#documentation)
-4. [Database Specifications](#database-specifications)
-5. [Build from source](#build-from-source)
-6. [Contributing](#contributing)
-7. [Community](#community)
-8. [Conductor OSS Roadmap](#conductor-oss-roadmap)
-9. [License](#license)
+---
 
-# What is Conductor?
-Conductor (or [Netflix Conductor](https://netflixtechblog.com/netflix-conductor-a-microservices-orchestrator-2e8d4771bf40)) is a microservices orchestration engine for distributed and asynchronous workflows. It empowers developers to create workflows that define interactions between services, databases, and other external systems.
+# Get Running in 60 Seconds
 
-Conductor is designed to enable flexible, resilient, and scalable workflows. It allows you to compose services into complex workflows without coupling them tightly, simplifying orchestration across cloud-native applications and enterprise systems alike.
+**Prerequisites:** [Node.js](https://nodejs.org/) v16+ and Java 21+ must be installed.
 
-## Key benefits
-* **Resilience and Error Handling:** Conductor enables automatic retries and fallback mechanisms.
-* **Scalability:** Built to scale with complex workflows in high-traffic environments.
-* **Observability:** Provides monitoring and debugging capabilities for workflows.
-* **Ease of Integration:** Seamlessly integrates with microservices, external APIs, and legacy systems.
+```shell
+npm install -g @conductor-oss/conductor-cli
+conductor server start
+```
 
-## Features
-* **Workflow as code:** Define workflows in JSON and manage them with versioning.
-* **Rich task types:** Includes task types like HTTP, JSON, Lambda, Sub Workflow, and Event tasks, allowing for flexible workflow definitions.
-* **Dynamic workflow management:** Workflows can evolve independently of the underlying services.
-* **Built-in UI:** A customizable UI is available to monitor and manage workflows.
-* **Flexible persistence and queue options:** Use Redis, MySQL, Postgres, and more.
-- - - 
-# Getting Started with Conductor
+Open [http://localhost:8080](http://localhost:8080) — your server is running with the built-in ui-next UI.
 
-## Requirements
-* Install Docker Desktop ([Mac](https://docs.docker.com/desktop/setup/install/mac-install/), [Windows/PC](https://docs.docker.com/desktop/setup/install/windows-install/), [Linux](https://docs.docker.com/desktop/setup/install/linux/))
-* Install Java (JDK) 17 or newer
-* Node 14 for the UI to build
-  * _Earlier versions may work, but are untested_
-  
+> **Upgrading from a previous version?** The CLI caches the server JAR at `~/.conductor-cli/`. If you have an older version cached, force a fresh download:
+> ```shell
+> conductor server start latest
+> # or delete the cache manually
+> rm ~/.conductor-cli/conductor-server-latest.jar && conductor server start
+> ```
 
-## Quick Start guide
+**Run your first workflow:**
 
-### Clone the repo
+```shell
+# Create a workflow that calls an API and parses the response — no workers needed
+curl -s https://raw.githubusercontent.com/conductor-oss/conductor/main/docs/quickstart/workflow.json -o workflow.json
+conductor workflow create workflow.json
+```
+
+> **Note:** Running this command twice will return an error on the second call — the workflow already exists. This is expected behavior. Use `conductor workflow update` to modify an existing workflow.
+
+```shell
+conductor workflow start -w hello_workflow --sync
+```
+
+See the [Quickstart guide](https://docs.conductor-oss.org/quickstart/) for the full walkthrough, including writing workers and replaying workflows.
+
+**Docker Image for Conductor** (includes the ui-next UI):
+
+```shell
+# UI at http://localhost:5000  |  API at http://localhost:8080
+docker run -p 5000:5000 -p 8080:8080 conductoross/conductor:next
+```
+
+All CLI commands have equivalent cURL/API calls. See the [Quickstart](https://docs.conductor-oss.org/quickstart/) for details.
+
+
+---
+
+# Why Conductor is the workflow engine of choice for developers
+
+| | |
+|---|---|
+| **Durable execution** | Every step is persisted. Survives crashes, restarts, and network failures with configurable retries and timeouts. |
+| **Explicit orchestration** | Keep orchestration as a versioned, inspectable graph while workers and built-in tasks perform business logic and side effects. |
+| **AI agent orchestration** | Native LLM tasks, MCP tool calling, human approval, and vector workflows for RAG. |
+| **Durable adaptive graphs** | Govern runtime-selected paths, bounded fan-out, tool calls, approvals, retries, cancellation, and recovery. |
+| **Dynamic at runtime** | Dynamic forks, tasks, and sub-workflows can be resolved at runtime. Validate generated workflow definitions before starting them. |
+| **Execution recovery** | Inspect an execution, then restart, rerun, retry, pause, resume, or terminate it according to the workflow's policy. |
+| **Operate at your scale** | Scale servers and workers independently, then use task domains, rate limits, concurrency limits, and metrics for control. |
+| **Polyglot workers** | Workers in Java, Python, Go, JavaScript, C#, Ruby, or Rust. Workers poll, execute, and report — run them anywhere. |
+| **Self-hosted, no lock-in** | Apache 2.0. 5 persistence backends, 6 message brokers. Runs anywhere Docker or a JVM runs. |
+
+# Ship Durable Adaptive Graphs, Not Framework Code
+
+Conductor workers are plain code — any language, any library, any I/O. The orchestration layer is declarative and machine-readable, so developers can keep their preferred SDK or framework while operators retain durable state, policy boundaries, replay, versioning, and auditability.
+
+Start with the [governed adaptive graph](https://docs.conductor-oss.org/devguide/ai/dynamic-workflows.html): plan → validate approved capabilities → bounded fan-out or human approval → evaluate → continue or finish.
+
+**An autonomous think-act agent in Conductor:** discover tools via MCP, reason with an LLM, call the chosen tool, repeat until done.
+
+```json
+{
+  "name": "autonomous_agent",
+  "description": "Agent that loops until the task is complete",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "discover_tools",
+      "taskReferenceName": "discover",
+      "type": "LIST_MCP_TOOLS",
+      "inputParameters": {
+        "mcpServer": "${workflow.input.mcpServerUrl}"
+      }
+    },
+    {
+      "name": "agent_loop",
+      "taskReferenceName": "loop",
+      "type": "DO_WHILE",
+      "loopCondition": "$.think['done'] != true && $.loop['iteration'] < 10",
+      "loopOver": [
+        {
+          "name": "think",
+          "taskReferenceName": "think",
+          "type": "LLM_CHAT_COMPLETE",
+          "inputParameters": {
+            "llmProvider": "openai",
+            "model": "gpt-4o-mini",
+            "messages": [
+              {
+                "role": "system",
+                "message": "You are an autonomous agent. Available tools: ${discover.output.tools}. Previous results: ${loop.output.results}. Respond with JSON: {\"action\": \"tool_name\", \"arguments\": {}, \"done\": false} or {\"answer\": \"final answer\", \"done\": true}."
+              },
+              { "role": "user", "message": "${workflow.input.task}" }
+            ],
+            "jsonOutput": true
+          }
+        },
+        {
+          "name": "act",
+          "taskReferenceName": "act",
+          "type": "SWITCH",
+          "evaluatorType": "value-param",
+          "expression": "route",
+          "inputParameters": {
+            "route": "${think.output.result.done}"
+          },
+          "decisionCases": {
+            "false": [
+              {
+                "name": "execute_tool",
+                "taskReferenceName": "tool_call",
+                "type": "CALL_MCP_TOOL",
+                "inputParameters": {
+                  "mcpServer": "${workflow.input.mcpServerUrl}",
+                  "method": "${think.output.result.action}",
+                  "arguments": "${think.output.result.arguments}"
+                }
+              }
+            ],
+            "true": []
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Every step is durably persisted — no framework, no SDK lock-in. Code-first engines force your code to be deterministic so the framework can replay it. Conductor makes the engine deterministic — so your code doesn't have to be.
+
+See [Build Your First AI Agent](https://docs.conductor-oss.org/devguide/ai/first-ai-agent.html) for the framework-first walkthrough, or [Durable Adaptive Graphs](https://docs.conductor-oss.org/devguide/ai/dynamic-workflows.html) for the governed production pattern.
+
+---
+
+## Conductor Skills for AI Coding Assistants
+
+**[Conductor Skills](https://github.com/conductor-oss/conductor-skills)** let AI coding assistants (Claude Code, Gemini CLI, and others) create, manage, and deploy Conductor workflows directly from your terminal.
+
+### Claude
+```shell
+# Install Skills for Claude Code
+/plugin marketplace add conductor-oss/conductor-skills
+/plugin install conductor@conductor-skills
+```
+
+### Install for all detected agents
+
+One command to auto-detect every supported agent on your system and install globally where possible. Re-run anytime — it only installs for newly detected agents.
+
+**macOS / Linux**
+```bash
+curl -sSL https://conductor-oss.github.io/conductor-skills/install.sh | bash -s -- --all
+```
+
+**Windows (PowerShell) / (cmd)**
+```powershell
+# powershell
+irm https://conductor-oss.github.io/conductor-skills/install.ps1 -OutFile install.ps1; .\install.ps1 -All
+
+# cmd
+powershell -c "irm https://conductor-oss.github.io/conductor-skills/install.ps1 -OutFile install.ps1; .\install.ps1 -All"
+```
+
+---
+
+# SDKs
+
+| Language | Repository | Install |
+|----------|------------|---------|
+| ☕ Java | [conductor-oss/java-sdk](https://github.com/conductor-oss/java-sdk) | [Maven Central](https://mvnrepository.com/artifact/org.conductoross/conductor-client) |
+| 🐍 Python | [conductor-oss/python-sdk](https://github.com/conductor-oss/python-sdk) | `pip install conductor-python` |
+| 🟨 JavaScript | [conductor-oss/javascript-sdk](https://github.com/conductor-oss/javascript-sdk) | `npm install @io-orkes/conductor-javascript` |
+| 🐹 Go | [conductor-oss/go-sdk](https://github.com/conductor-oss/go-sdk) | `go get github.com/conductor-sdk/conductor-go` |
+| 🟣 C# | [conductor-oss/csharp-sdk](https://github.com/conductor-oss/csharp-sdk) | `dotnet add package conductor-csharp` |
+| 💎 Ruby | [conductor-oss/ruby-sdk](https://github.com/conductor-oss/ruby-sdk) | *(incubating)* |
+| 🦀 Rust | [conductor-oss/rust-sdk](https://github.com/conductor-oss/rust-sdk) | *(incubating)* |
+
+---
+
+# Documentation & Community
+
+- **[Documentation](https://conductor-oss.org)** — Architecture, guides, API reference, and cookbook recipes.
+- **[Slack](https://join.slack.com/t/orkes-conductor/shared_invite/zt-3dpcskdyd-W895bJDm8psAV7viYG3jFA)** — Community discussions and support.
+- **[Community Forum](https://community.orkes.io/)** — Ask questions and share patterns.
+
+---
+
+<details>
+<summary><strong>Backend Configuration</strong></summary>
+
+| Backend | Configuration |
+|---------|---------------|
+| Redis + ES7 (default) | [config-redis.properties](docker/server/config/config-redis.properties) |
+| Redis + ES8 | [config-redis-es8.properties](docker/server/config/config-redis-es8.properties) |
+| Redis + OpenSearch | [config-redis-os.properties](docker/server/config/config-redis-os.properties) |
+| Postgres | [config-postgres.properties](docker/server/config/config-postgres.properties) |
+| Postgres + ES7 | [config-postgres-es7.properties](docker/server/config/config-postgres-es7.properties) |
+| MySQL + ES7 | [config-mysql.properties](docker/server/config/config-mysql.properties) |
+
+</details>
+
+---
+
+# Build From Source
+
+<details>
+<summary><strong>Requirements and instructions</strong></summary>
+
+**Requirements:** Docker Desktop, Java (JDK) 21+, Node.js 18+ and pnpm (for UI)
 
 ```shell
 git clone https://github.com/conductor-oss/conductor
-```
-
-### Change to new Conductor directory
-
-```shell
 cd conductor
+./gradlew build
+
+# (optional) Build UI (ui-next) and embed it in the server
+# ./build_ui_next.sh
+
+# Start local server
+cd server
+../gradlew bootRun
 ```
 
-### (Optional) Install Git Hook for Auto-formatting
+**Run the UI in dev mode (hot-reload at http://localhost:1234):**
 
-To automatically format code before commits:
+Requires a running Conductor server on `http://localhost:8080`. Enable `corepack` once if you haven't already:
 
 ```shell
-ln -s ../../hooks/pre-commit .git/hooks/pre-commit
+corepack enable
 ```
 
-### Start with Docker Compose (_recommended for local deployment_)
+Then start the dev server:
 
 ```shell
-docker compose -f docker/docker-compose.yaml up
+cd ui-next
+pnpm install
+pnpm dev
 ```
 
-## Create your first workflow
+Open [http://localhost:1234](http://localhost:1234) — the UI reloads automatically on file changes.
 
-### With the UI:
-* http://localhost:8127
+See the [full build guide](docs/devguide/running/source.md) for details.
+</details>
 
-### Or the REST API with your preferred HTTP client:
-* http://localhost:8080
+---
 
-# Documentation
-Check-out the [Conductor docs](https://github.com/conductor-oss/conductor/tree/main/docs) for additional details
-- - - 
-# Database Specifications
-* The default persistence used is Redis
-* The indexing backend is [Elasticsearch](https://www.elastic.co/) (7.x)
-* To use [Opensearch](https://opensearch.org/) (2.x), comment out Elasticsearch import so lucene dependencies don't conflict [server/build.gradle](https://github.com/conductor-oss/conductor/blob/main/server/build.gradle#L44-L46)
+# FAQ
 
+<details>
+<summary><strong>Is this the same as Netflix Conductor?</strong></summary>
 
-## Configuration for various database backends
+Yes. Conductor OSS is the continuation of the original [Netflix Conductor](https://github.com/Netflix/conductor) repository after Netflix contributed the project to the open-source foundation.
+</details>
 
-| Backend        | Configuration                                                                         |
-|----------------|---------------------------------------------------------------------------------------|
-| Redis + ES7    | [config-redis.properties](docker/server/config/config-redis.properties)               |
-| Postgres       | [config-postgres.properties](docker/server/config/config-postgres.properties)         |
-| Postgres + ES7 | [config-postgres-es7.properties](docker/server/config/config-postgres-es7.properties) |
-| MySQL + ES7    | [config-mysql.properties](docker/server/config/config-mysql.properties)               |
+<details>
+<summary><strong>Is Conductor open source?</strong></summary>
 
+Yes. Conductor is a fully open-source workflow engine licensed under Apache 2.0. You can self-host on your own infrastructure with 5 persistence backends and 6 message brokers.
+</details>
 
-# Build from source
-Build from source and deploy Conductor as a standalone Java application. Configure databases, queues, and environment settings as needed. Follow the **[Building Conductor From Source](docs/devguide/running/source.md)** guide included in this repo. 
+<details>
+<summary><strong>Is this project actively maintained?</strong></summary>
 
-## Available SDKs
-Conductor provides several SDKs for interacting with the API and creating custom clients:
+Yes. [Orkes](https://orkes.io) is the primary maintainer and offers an enterprise SaaS platform for Conductor across all major cloud providers.
+</details>
 
-* [**Java SDK:**](https://github.com/conductor-oss/java-sdk) Fully featured for building and executing workflows in Java.
-* [**Python SDK:**](https://github.com/conductor-oss/python-sdk) Python library for creating and managing workflows.
-* [**Javascript SDK:**](https://github.com/conductor-oss/javascript-sdk) For integrating Conductor workflows with Javascript/Typescript-based services.
-* [**Go SDK:**](https://github.com/conductor-oss/go-sdk) For integrating Conductor workflows with Go-based services.
-* [**C# SDK:**](https://github.com/conductor-oss/csharp-sdk)The conductor-csharp repository provides the client SDKs to build task workers in C#
+<details>
+<summary><strong>Can Conductor scale to handle my workload?</strong></summary>
 
-Each SDK is maintained as part of the Conductor project, providing examples and comprehensive API documentation.
-- - - 
+Conductor servers and workers scale independently. Use task domains, concurrency limits, persistence configuration, and metrics to match throughput and isolation to your environment.
+</details>
+
+<details>
+<summary><strong>Does Conductor support durable execution?</strong></summary>
+
+Yes. Conductor persists workflow and task state, supports recovery after worker and infrastructure failure, and exposes retries, timeouts, pause, resume, and termination controls.
+</details>
+
+<details>
+<summary><strong>Can I replay a workflow after it completes or fails?</strong></summary>
+
+Conductor supports restart, rerun, and retry controls. Execution-history retention depends on configuration, and <code>keepLastN</code> intentionally removes older loop iterations.
+</details>
+
+<details>
+<summary><strong>Can Conductor orchestrate AI agents and LLMs?</strong></summary>
+
+Yes. Conductor provides native LLM tasks, MCP tool discovery and calls, human approval, and vector workflows for RAG. See the maintained <a href="https://docs.conductor-oss.org/conductor/devguide/ai/llm-orchestration.html">LLM orchestration guide</a> for provider and capability details.
+</details>
+
+<details>
+<summary><strong>Why does Conductor separate orchestration from code?</strong></summary>
+
+Conductor keeps orchestration as a versioned, machine-readable graph while workers and built-in tasks perform business logic and side effects. This makes paths, inputs, policy, and task outcomes inspectable without constraining the language used for workers.
+</details>
+
+<details>
+<summary><strong>Isn't writing workflows as code more powerful than JSON?</strong></summary>
+
+JSON keeps the orchestration graph machine-readable and versioned. Workers remain ordinary code, and built-in tasks cover common integration and control-flow behavior. Use validated runtime definitions when a service or LLM needs to select an approved plan at runtime.
+</details>
+
+<details>
+<summary><strong>Can JSON workflows handle complex logic like branching, loops, and error handling?</strong></summary>
+
+Yes. Conductor supports `SWITCH` (conditional branching), `DO_WHILE` (loops with configurable iteration cleanup), `FORK_JOIN` (parallel execution with dynamic fanout), `SUB_WORKFLOW` (composition), and `DYNAMIC` tasks resolved at runtime. These are composable — you can nest loops inside branches inside forks. For error handling, every task supports configurable retries, timeouts, and optional/compensating tasks. The declarative model doesn't limit complexity — it makes complexity visible and debuggable.
+</details>
+
+<details>
+<summary><strong>How does Conductor handle workflow versioning?</strong></summary>
+
+Workflow definitions are versioned by number. Running executions continue on the version they started with — deploying a new version never breaks in-flight workflows. There's no replay compatibility problem because Conductor doesn't replay your code. The orchestration graph is the source of truth, and each execution is pinned to its definition version. Update orchestration logic without redeploying workers and without worrying about breaking running workflows.
+</details>
+
+<details>
+<summary><strong>What about developer experience — IDE support, type checking, debugging?</strong></summary>
+
+Conductor provides a built-in visual UI for designing, running, and debugging workflows. Every execution is fully observable: you can inspect the input, output, timing, and retry history of every task. For type safety, Conductor validates workflow inputs and task I/O against JSON Schema. Workers are plain code in your language of choice — you get full IDE support, type checking, and debugging for your business logic. The orchestration layer is visible in the UI, not hidden inside a framework.
+</details>
+
+<details>
+<summary><strong>Can Conductor handle long-running workflows (days, weeks, months)?</strong></summary>
+
+Yes. Conductor is designed for long-running workflows. Executions are fully persisted — a workflow can pause for months waiting for a human approval, an external signal, or a scheduled timer, and resume exactly where it left off. There's no in-memory state to lose. This is the same mechanism that makes AI agent loops durable: if iteration 12 waits for a human review for three weeks, iteration 13 picks up right where it left off.
+</details>
+
+<details>
+<summary><strong>Don't I lose flexibility by not having orchestration in code?</strong></summary>
+
+You gain flexibility. Because workflows are JSON, LLMs can generate and modify them at runtime — no compile/deploy cycle. Dynamic forks let you fan out to a variable number of parallel tasks determined at runtime. Dynamic sub-workflows let one workflow compose others by name. And because workers are decoupled from orchestration, you can update the workflow graph or swap worker implementations independently. Code-first engines couple these together, so changing orchestration means redeploying and re-versioning your code.
+</details>
+
+<details>
+<summary><strong>What does Conductor provide for adaptive agents?</strong></summary>
+
+Conductor combines native AI and MCP tasks with durable loops, branches, fan-out, approval, retry, cancellation, and an inspectable execution history. Start with the <a href="https://docs.conductor-oss.org/conductor/devguide/ai/dynamic-workflows.html">governed adaptive graph</a>.
+</details>
+
+<details>
+<summary><strong>Is Orkes Conductor compatible with Conductor OSS?</strong></summary>
+
+100% compatible. Orkes Conductor is built on top of Conductor OSS with full API and workflow compatibility.
+</details>
+
+---
+
 # Contributing
 
 We welcome contributions from everyone!
 
-- **Report Issues:** Found a bug or have a feature request? Open an [issue on GitHub](https://github.com/conductor-oss/conductor/issues).
-- **Contribute code:** Check out our [Contribution Guide](CONTRIBUTING.md), and explore our [Good first issues](https://github.com/conductor-oss/conductor/labels/good%20first%20issue) for beginner-friendly tasks to tackle first.
-- **Contribute to our Docs:** Contribute edits or updates to keep our [documentation](https://github.com/conductor-oss/conductor/tree/main/docs) in great shape for the community.
-- **Build a Conductor SDK:** Need an [SDK](https://github.com/conductor-sdk) not available for Conductor today? Build your own using the [Swagger API](http://localhost:8080) included with your local deployment. 
-
-- - - 
-# Community
-**[Join the Conductor Slack](https://join.slack.com/t/orkes-conductor/shared_invite/zt-2vdbx239s-Eacdyqya9giNLHfrCavfaA)** channel for community discussions and support. 
+- **Report Issues:** Open an [issue on GitHub](https://github.com/conductor-oss/conductor/issues).
+- **Contribute code:** Check out our [Contribution Guide](CONTRIBUTING.md) and [good first issues](https://github.com/conductor-oss/conductor/labels/good%20first%20issue).
+- **Improve docs:** Help keep our [documentation](https://github.com/conductor-oss/conductor/tree/main/docs) great.
 
 ## Contributors
 
@@ -158,12 +394,12 @@ We welcome contributions from everyone!
   <img src="https://contrib.rocks/image?repo=conductor-oss/conductor" />
 </a>
 
-- - - 
-# Conductor OSS Roadmap
-[See the roadmap for the Conductor](ROADMAP.md)
-If you would like to participate in the roadmap and development, [please reach out](https://forms.gle/P2i1xHrxPQLrjzTB7).
+---
 
+# Roadmap
 
-- - -
+[See the Conductor OSS Roadmap](ROADMAP.md). Want to participate? [Reach out](https://forms.gle/P2i1xHrxPQLrjzTB7).
+
 # License
-Conductor is licensed under the [Apache 2.0 License ©](LICENSE)
+
+Conductor is licensed under the [Apache 2.0 License](LICENSE).

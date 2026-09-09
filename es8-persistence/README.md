@@ -1,46 +1,85 @@
 # ES8 Persistence
 
-This module provides ES8 persistence when indexing workflows and tasks.
+This module provides Elasticsearch 8.x persistence for indexing workflows and tasks.
 
-### ES Breaking changes
+It uses the Elasticsearch Java API Client (`elasticsearch-java`) aligned with ES8.
 
-From ES7 to ES8 there are additional breaking changes which affect the ES8-persistence module implementation.
-* Mapping type deprecation continues
-* Templates API changes
-* TransportClient is removed
-* Security and authentication changes
-* Removal of deprecated APIs
+## Index management (ES8 best practices)
 
-More information can be found here: https://www.elastic.co/guide/en/elasticsearch/reference/8.0/breaking-changes-8.0.html
+This module uses composable index templates, write aliases, and an ILM policy:
 
-## Build
+- **ILM policy:** `${indexPrefix}-default-ilm-policy`
+- **Rollover conditions (hot phase):** `max_primary_shard_size=50gb`
+- **Write aliases:** `${indexPrefix}_workflow`, `${indexPrefix}_task`, `${indexPrefix}_task_log`,
+  `${indexPrefix}_message`, `${indexPrefix}_event`
+- **Initial indices:** `${alias}-000001` (created automatically when index management is enabled)
+- **Refresh interval:** defaults to `30s` for all indices (configurable)
 
-1. In order to use ES8, you must change the following files from ES7 to ES8:
+## Build and usage
 
-https://github.com/conductor-oss/conductor/blob/main/build.gradle
-https://github.com/conductor-oss/conductor/blob/main/server/src/main/resources/application.properties
+### 1) Build-time module selection
 
-In file:
-- /build.gradle
-change ext['elasticsearch.version'] from revElasticSearch7 to revElasticSearch8
+When building the server, select the ES8 persistence module to avoid Lucene conflicts:
 
-In file:
-- /server/src/main/resources/application.properties
-change conductor.elasticsearch.version from 7 to 8
-
-Also you need to recreate dependencies.lock files with ES8 dependencies. To do that delete all dependencies.lock files and then run:
-
-```
-./gradlew generateLock updateLock saveLock
+```sh
+./gradlew :conductor-server:bootJar -PindexingBackend=elasticsearch8
 ```
 
-2. To use ES8 for all modules including test-harness, you must also change the following files:
+`-PindexingBackend=es8` is also accepted.
 
-https://github.com/conductor-oss/conductor/blob/main/test-harness/build.gradle
-https://github.com/conductor-oss/conductor/blob/main/test-harness/src/test/java/com/netflix/conductor/test/integration/AbstractEndToEndTest.java
+### 2) Runtime configuration
 
-In file:
-- /test-harness/build.gradle
+Select the Elasticsearch 8 backend in your configuration:
 
-Update Elasticsearch dependencies to version 8.
+```properties
+conductor.indexing.type=elasticsearch8
+```
 
+### Elasticsearch version compatibility
+
+The ES8 module uses `elasticsearch-java` client version `8.19.11`.
+For local Docker-based setups, use Elasticsearch `8.19.x` (the provided compose file pins
+`8.19.11`).
+
+All other `conductor.elasticsearch.*` properties are shared with the ES7 module.
+
+### Configuration
+
+(Default values shown below)
+
+```properties
+# A comma separated list of scheme/host/port of the ES nodes to communicate with.
+# Scheme can be `http` or `https`. If scheme is omitted then `http` will be used.
+conductor.elasticsearch.url=localhost:9200
+
+# The name of the workflow and task index.
+conductor.elasticsearch.indexPrefix=conductor
+
+# Default refresh interval applied via the component template.
+conductor.elasticsearch.indexRefreshInterval=30s
+
+# Force an immediate refresh after every ES8 write/delete operation.
+conductor.elasticsearch.refreshOnWrite=false
+
+# Path to a PEM-encoded certificate to trust for HTTPS connections.
+conductor.elasticsearch.trustCertPath=
+
+# Worker queue size used in executor service for async methods in IndexDao.
+conductor.elasticsearch.asyncWorkerQueueSize=100
+
+# Maximum thread pool size in executor service for async methods in IndexDao
+conductor.elasticsearch.asyncMaxPoolSize=12
+
+# Timeout (in seconds) for the in-memory to be flushed if not explicitly indexed
+conductor.elasticsearch.asyncBufferFlushTimeout=10
+```
+
+### BASIC Authentication
+
+If you need to pass user/password to connect to ES, add the following properties to your
+config file:
+
+```
+conductor.elasticsearch.username=someusername
+conductor.elasticsearch.password=somepassword
+```
