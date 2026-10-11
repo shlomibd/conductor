@@ -348,6 +348,93 @@ public class TestSubWorkflow {
     }
 
     @Test
+    public void testStartDefersLaterSiblingUntilEarlierSiblingHasQueuedFirstTask() {
+        WorkflowModel workflowInstance = newParentWorkflow();
+
+        TaskModel earlier = newTask();
+        earlier.setTaskId("task_1");
+        earlier.setTaskType("SUB_WORKFLOW");
+        earlier.setSeq(1);
+        earlier.setSubWorkflowId("started-child-workflow");
+        earlier.setInputData(inputData("first_subflow", 1));
+        earlier.setStatus(TaskModel.Status.IN_PROGRESS);
+
+        TaskModel later = newTask();
+        later.setTaskId("task_2");
+        later.setTaskType("SUB_WORKFLOW");
+        later.setSeq(2);
+        later.setInputData(inputData("second_subflow", 1));
+        later.setStatus(TaskModel.Status.SCHEDULED);
+
+        workflowInstance.getTasks().add(earlier);
+        workflowInstance.getTasks().add(later);
+
+        WorkflowModel childWorkflow = new WorkflowModel();
+        childWorkflow.setWorkflowId("started-child-workflow");
+        childWorkflow.setStatus(WorkflowModel.Status.RUNNING);
+        childWorkflow.setTasks(new java.util.ArrayList<>());
+
+        when(workflowExecutor.getWorkflow("started-child-workflow", false)).thenReturn(childWorkflow);
+
+        subWorkflow.start(workflowInstance, later, workflowExecutor);
+
+        verify(workflowExecutor, never()).startWorkflowIdempotent(any());
+        assertEquals(TaskModel.Status.SCHEDULED, later.getStatus());
+        assertNull(later.getSubWorkflowId());
+    }
+
+    @Test
+    public void testStartAllowsLaterSiblingAfterEarlierSiblingHasQueuedFirstTask() {
+        WorkflowModel workflowInstance = newParentWorkflow();
+
+        TaskModel earlier = newTask();
+        earlier.setTaskId("task_1");
+        earlier.setTaskType("SUB_WORKFLOW");
+        earlier.setSeq(1);
+        earlier.setStatus(TaskModel.Status.IN_PROGRESS);
+        earlier.setSubWorkflowId("started-child-workflow");
+        earlier.setInputData(inputData("first_subflow", 1));
+
+        TaskModel later = newTask();
+        later.setTaskId("task_2");
+        later.setTaskType("SUB_WORKFLOW");
+        later.setSeq(2);
+        later.setInputData(inputData("second_subflow", 1));
+        later.setStatus(TaskModel.Status.SCHEDULED);
+
+        workflowInstance.getTasks().add(earlier);
+        workflowInstance.getTasks().add(later);
+
+        WorkflowModel earlierChild = new WorkflowModel();
+        earlierChild.setWorkflowId("started-child-workflow");
+        earlierChild.setStatus(WorkflowModel.Status.RUNNING);
+        earlierChild.setTasks(new java.util.ArrayList<>());
+        TaskModel firstChildTask = new TaskModel();
+        firstChildTask.setTaskId("child-task-1");
+        firstChildTask.setStatus(TaskModel.Status.SCHEDULED);
+        firstChildTask.setScheduledTime(System.currentTimeMillis());
+        earlierChild.getTasks().add(firstChildTask);
+
+        when(workflowExecutor.getWorkflow("started-child-workflow", true)).thenReturn(earlierChild);
+
+        WorkflowModel subWorkflowInstance = new WorkflowModel();
+        subWorkflowInstance.setWorkflowId("started-child-workflow-2");
+        subWorkflowInstance.setStatus(WorkflowModel.Status.RUNNING);
+
+        when(idGenerator.generateSubWorkflowId(
+                        PARENT_WORKFLOW_ID, "task_2", later.getRetryCount()))
+                .thenReturn("started-child-workflow-2");
+        when(workflowExecutor.startWorkflowIdempotent(any(StartWorkflowInput.class)))
+                .thenReturn(subWorkflowInstance);
+
+        subWorkflow.start(workflowInstance, later, workflowExecutor);
+
+        verify(workflowExecutor).getWorkflow("started-child-workflow", true);
+        assertEquals("started-child-workflow-2", later.getSubWorkflowId());
+        assertEquals(TaskModel.Status.IN_PROGRESS, later.getStatus());
+    }
+
+    @Test
     public void testStartThrowsWhenSubWorkflowNameNullAndNoDefinitionSupplied() {
         WorkflowModel workflowInstance = newParentWorkflow();
         TaskModel task = newTask();

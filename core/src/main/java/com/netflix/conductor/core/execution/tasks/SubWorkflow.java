@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hibernate.validator.internal.util.logging.Log_.logger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -67,7 +68,14 @@ public class SubWorkflow extends WorkflowSystemTask {
                     task.getStatus());
             return;
         }
-
+        if (hasEarlierSiblingSubWorkflowNotEnqueuedFirstTask(workflow, task, workflowExecutor)) {
+            LOGGER.info(
+                    "Deferring sub-workflow task {} in parent workflow {} until earlier sibling sub-workflow has started",
+                    task.getTaskId(),
+                    workflow.getWorkflowId());
+            task.setStatus(TaskModel.Status.SCHEDULED);
+            return;
+        }
         Map<String, Object> input = task.getInputData();
 
         // Null-safe version read: version may be absent when an inline workflowDefinition is
@@ -378,6 +386,63 @@ public class SubWorkflow extends WorkflowSystemTask {
      */
     @Override
     public boolean isTaskRetrievalRequired() {
+        return false;
+    }
+
+    private boolean hasEarlierSiblingSubWorkflowNotEnqueuedFirstTask(
+            WorkflowModel workflow, TaskModel currentTask, WorkflowExecutor workflowExecutor) {
+        workflow =  workflowExecutor.getWorkflow(workflow.getWorkflowId(), true);
+        if (workflow == null || workflow.getTasks() == null || currentTask == null) {
+            LOGGER.warn("Invalid input: workflow={}, currentTask={}", workflow, currentTask);
+            return false;
+        }
+        for (TaskModel sibling : workflow.getTasks()) {
+            if (sibling == null || sibling == currentTask) {
+                continue;
+            }
+            if (!TASK_TYPE_SUB_WORKFLOW.equalsIgnoreCase(sibling.getTaskType())) {
+                continue;
+            }
+            if (sibling.getSeq() == 0 || currentTask.getSeq() == 0) {
+                continue;
+            }
+            if (sibling.getSeq() >= currentTask.getSeq()) {
+                continue;
+            }
+            if (sibling.getStatus() != null && (sibling.getStatus().isTerminal() || sibling.getStatus() == TaskModel.Status.IN_PROGRESS)) {
+                LOGGER.info("Sibling sub-workflow {} is in terminal/Not started status {}", sibling.getSubWorkflowId(), sibling.getStatus());
+                continue;
+            }
+            return true;
+            /*
+            String siblingSubWorkflowId = sibling.getSubWorkflowId();
+            if (StringUtils.isEmpty(siblingSubWorkflowId)) {
+                return true;
+            }
+
+
+            // The ordering rule is based on the earlier child having enqueued its first task in the
+            // child workflow. Merely existing as a RUNNING workflow is not enough, because the first
+            // child task can still be delayed behind a later sibling by the child workflow's async
+            // scheduling loop. Load the child workflow with tasks included and require an actual
+            // queued/started task record before releasing the next same-parent sibling.
+            WorkflowModel childWorkflow = workflowExecutor.getWorkflow(siblingSubWorkflowId, true);
+            if (childWorkflow == null || childWorkflow.getTasks() == null) {
+                return true;
+            }
+            boolean firstTaskEnqueued =
+                    childWorkflow.getTasks().stream()
+                            .filter(java.util.Objects::nonNull)
+                            .filter(task -> task.getStatus() != null)
+                            .filter(task -> !task.getStatus().isTerminal())
+                            .anyMatch(task -> task.getScheduledTime() > 0 || task.getStartTime() > 0);
+            if (!firstTaskEnqueued) {
+                return true;
+            }
+            LOGGER.info("First task enqueued for sibling sub-workflow {} child worflow tasks {}", siblingSubWorkflowId, childWorkflow.getTasks());
+            */
+           
+        }
         return false;
     }
 
